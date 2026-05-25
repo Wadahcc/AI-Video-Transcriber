@@ -58,13 +58,23 @@ class VideoProcessor:
         await asyncio.to_thread(_run)
         return str(out_path)
     
-    async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    async def fetch_subtitles(
+        self,
+        url: str,
+        output_dir: Path,
+        preferred_lang: Optional[str] = None,
+    ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[tuple[str, str]]]:
         """
         先尝试从平台获取字幕文本，比下载音频快得多。
 
+        Args:
+            preferred_lang: 用户偏好的字幕语言代码（如 "id"）。若该语言可用，
+                会优先采用，否则回退到内部优先级表。
+
         Returns:
-            (subtitle_markdown, video_title, language_code)
-            subtitle_markdown 为 None 表示无可用字幕。
+            (subtitle_markdown, video_title, language_code, raw_subtitle)
+            其中 raw_subtitle 为 (subtitle_content, ext_without_dot) 元组，
+            供调用方持久化保存为可下载的原始字幕文件；若无字幕则为 None。
         """
         import asyncio
 
@@ -88,18 +98,43 @@ class VideoProcessor:
 
             if not manual_langs and not auto_langs:
                 logger.info(f"视频无可用字幕: {url}")
-                return None, video_title, None
+                return None, video_title, None, None
 
             # 优先手动字幕，其次自动字幕
             prefer_manual = bool(manual_langs)
             candidate_langs = manual_langs if prefer_manual else auto_langs
 
-            # 按优先级选语言：英语 > 简体中文 > 繁体中文 > 其他（取第一个）
-            _priority = ["en", "en-orig", "zh-Hans", "zh-Hant", "zh", "ja", "ko", "fr", "de", "es"]
-            prefer_lang = next(
-                (lang for lang in _priority if lang in candidate_langs),
-                candidate_langs[0],
-            )
+            # 用户偏好语言优先（含常见变体匹配，如 id-ID / id-orig）
+            normalized_pref = (preferred_lang or "").strip().lower()
+            user_pref_match = None
+            if normalized_pref:
+                # 精确匹配
+                for lang in candidate_langs:
+                    if lang.lower() == normalized_pref:
+                        user_pref_match = lang
+                        break
+                # 前缀匹配（如 "id" 命中 "id-ID"、"id-orig"）
+                if not user_pref_match:
+                    for lang in candidate_langs:
+                        if lang.lower().split("-")[0] == normalized_pref:
+                            user_pref_match = lang
+                            break
+
+            # 按优先级选语言：用户偏好 > 印尼语 > 英语 > 中文 > 其他
+            _priority = [
+                "id", "id-orig",
+                "en", "en-orig",
+                "zh-Hans", "zh-Hant", "zh",
+                "ja", "ko", "fr", "de", "es",
+            ]
+            if user_pref_match:
+                prefer_lang = user_pref_match
+                logger.info(f"按用户偏好选用字幕语言: {prefer_lang}")
+            else:
+                prefer_lang = next(
+                    (lang for lang in _priority if lang in candidate_langs),
+                    candidate_langs[0],
+                )
             logger.info(
                 f"发现{'手动' if prefer_manual else '自动'}字幕，选用语言: {prefer_lang}"
                 f"（候选 {len(candidate_langs)} 种）"
@@ -141,16 +176,26 @@ class VideoProcessor:
 
             if not entries:
                 logger.warning("字幕解析结果为空，回退音频模式")
-                return None, video_title, None
+                return None, video_title, None, None
+
+            # 4.5 读取原始字幕内容，供调用方持久化为可下载文件
+            raw_subtitle_payload: Optional[tuple[str, str]] = None
+            try:
+                raw_subtitle_text = sub_file.read_text(encoding="utf-8", errors="replace")
+                raw_subtitle_ext = sub_file.suffix.lstrip(".").lower() or "vtt"
+                if raw_subtitle_text.strip():
+                    raw_subtitle_payload = (raw_subtitle_text, raw_subtitle_ext)
+            except Exception as e:
+                logger.warning(f"读取原始字幕内容失败（仅影响下载，不阻断流程）: {e}")
 
             # 5. 格式化为与 Whisper 输出兼容的 Markdown
             formatted = self._format_subtitle_entries(entries, file_lang)
             logger.info(f"字幕获取成功: lang={file_lang}, {len(entries)} 条目")
-            return formatted, video_title, file_lang
+            return formatted, video_title, file_lang, raw_subtitle_payload
 
         except Exception as e:
             logger.warning(f"字幕获取失败（将回退至音频下载）: {e}")
-            return None, None, None
+            return None, None, None, None
         finally:
             if sub_dir.exists():
                 try:

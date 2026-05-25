@@ -108,6 +108,9 @@ sse_connections = {}
 UPLOAD_ALLOWED_EXT = frozenset({".txt", ".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mkv", ".ogg", ".flac"})
 UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "200"))
 
+# 允许下载的文件后缀：Markdown 产出与原始字幕文件
+DOWNLOAD_ALLOWED_SUFFIXES = (".md", ".vtt", ".srt")
+
 
 def _sanitize_title_for_filename(title: str) -> str:
     """将视频标题清洗为安全的文件名片段。"""
@@ -147,6 +150,7 @@ async def _run_post_extract_pipeline(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    raw_subtitle: Optional[tuple] = None,
 ) -> None:
     """取得 raw_script 后的共用管线：归档、优化、翻译、摘要、广播。"""
     short_id = task_id.replace("-", "")[:6]
@@ -162,6 +166,27 @@ async def _run_post_extract_pipeline(
         await broadcast_task_update(task_id, tasks[task_id])
     except Exception as e:
         logger.error(f"保存原始转录Markdown失败: {e}")
+
+    # 如果从平台取得了原始字幕文件，持久化为可下载资源
+    try:
+        if raw_subtitle and isinstance(raw_subtitle, (tuple, list)) and len(raw_subtitle) == 2:
+            sub_content, sub_ext = raw_subtitle
+            ext = (sub_ext or "vtt").lower()
+            if ext not in {"vtt", "srt"}:
+                ext = "vtt"
+            subtitle_filename = f"subtitle_{safe_title}_{short_id}.{ext}"
+            subtitle_path = TEMP_DIR / subtitle_filename
+            async with aiofiles.open(subtitle_path, "w", encoding="utf-8") as f:
+                await f.write(sub_content or "")
+            tasks[task_id].update({
+                "subtitle_file": subtitle_filename,
+                "subtitle_path": str(subtitle_path),
+                "subtitle_ext": ext,
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+    except Exception as e:
+        logger.error(f"保存原始字幕文件失败: {e}")
 
     tasks[task_id].update({
         "progress": 55,
@@ -495,7 +520,9 @@ async def process_video_task(
         else:
             request_summarizer = summarizer  # 全局实例（使用环境变量）
 
-        subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
+        subtitle_text, sub_title, sub_lang, raw_subtitle = await video_processor.fetch_subtitles(
+            url, TEMP_DIR, preferred_lang=summary_language,
+        )
 
         if subtitle_text:
             # ── 快速路径：有字幕，跳过音频下载和 Whisper ──────────────────
@@ -550,6 +577,7 @@ async def process_video_task(
             api_key=api_key,
             model_base_url=model_base_url,
             model_id=model_id,
+            raw_subtitle=raw_subtitle,
         )
 
         # 不要立即删除临时文件！保留给用户下载
@@ -754,9 +782,14 @@ async def download_file(filename: str):
     直接从temp目录下载文件（简化方案）
     """
     try:
+        lower = filename.lower()
         # 检查文件扩展名安全性
-        if not filename.endswith('.md'):
-            raise HTTPException(status_code=400, detail="仅支持下载.md文件")
+        if not lower.endswith(DOWNLOAD_ALLOWED_SUFFIXES):
+            allowed = ", ".join(DOWNLOAD_ALLOWED_SUFFIXES)
+            raise HTTPException(
+                status_code=400,
+                detail=f"仅支持下载以下后缀的文件: {allowed}",
+            )
         
         # 检查文件名格式（防止路径遍历攻击）
         if '..' in filename or '/' in filename or '\\' in filename:
@@ -765,11 +798,20 @@ async def download_file(filename: str):
         file_path = TEMP_DIR / filename
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
-            
+
+        if lower.endswith(".md"):
+            media_type = "text/markdown"
+        elif lower.endswith(".vtt"):
+            media_type = "text/vtt"
+        elif lower.endswith(".srt"):
+            media_type = "application/x-subrip"
+        else:
+            media_type = "application/octet-stream"
+
         return FileResponse(
             file_path,
             filename=filename,
-            media_type="text/markdown"
+            media_type=media_type,
         )
     except HTTPException:
         raise
