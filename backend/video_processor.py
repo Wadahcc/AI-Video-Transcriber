@@ -11,6 +11,59 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _build_yt_dlp_network_opts() -> dict:
+    """Build cookie / timeout / retry options for yt-dlp from environment.
+
+    Environment variables:
+        YT_DLP_COOKIES_FILE: path to a Netscape-format cookies.txt (used as `cookiefile`).
+        YT_DLP_COOKIES_BROWSER: browser spec for `--cookies-from-browser`, e.g.
+            "chrome", "firefox", or "chrome:/path/to/user-data-dir". Mutually
+            exclusive with YT_DLP_COOKIES_FILE; the file wins if both are set.
+        YT_DLP_SOCKET_TIMEOUT: socket timeout in seconds (default 60).
+        YT_DLP_RETRIES: number of retries for transient errors (default 10).
+        YT_DLP_FRAGMENT_RETRIES: retries per HLS/DASH fragment (default 10).
+
+    Cookies are required when YouTube returns "Sign in to confirm you're not a
+    bot" — this happens on most datacenter/VPS IPs. Increased timeouts and
+    retries also help when the upstream connection is slow or flaky.
+    """
+    opts: dict = {}
+
+    cookies_file = os.getenv("YT_DLP_COOKIES_FILE", "").strip()
+    cookies_browser = os.getenv("YT_DLP_COOKIES_BROWSER", "").strip()
+    if cookies_file:
+        if os.path.isfile(cookies_file):
+            opts["cookiefile"] = cookies_file
+        else:
+            logger.warning(
+                f"YT_DLP_COOKIES_FILE is set but file not found: {cookies_file}"
+            )
+    elif cookies_browser:
+        # yt-dlp expects a tuple: (browser_name, profile_or_path, keyring, container)
+        # Accept either "chrome" or "chrome:/path/to/dir" or "chrome:Default".
+        if ":" in cookies_browser:
+            browser_name, profile_or_path = cookies_browser.split(":", 1)
+            opts["cookiesfrombrowser"] = (browser_name.strip(), profile_or_path.strip(), None, None)
+        else:
+            opts["cookiesfrombrowser"] = (cookies_browser, None, None, None)
+
+    try:
+        opts["socket_timeout"] = int(os.getenv("YT_DLP_SOCKET_TIMEOUT", "60"))
+    except ValueError:
+        opts["socket_timeout"] = 60
+    try:
+        opts["retries"] = int(os.getenv("YT_DLP_RETRIES", "10"))
+    except ValueError:
+        opts["retries"] = 10
+    try:
+        opts["fragment_retries"] = int(os.getenv("YT_DLP_FRAGMENT_RETRIES", "10"))
+    except ValueError:
+        opts["fragment_retries"] = 10
+
+    return opts
+
+
 class VideoProcessor:
     """视频处理器，使用yt-dlp下载和转换视频"""
     
@@ -30,6 +83,7 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
+            **_build_yt_dlp_network_opts(),
         }
 
     async def normalize_local_media_to_m4a(self, input_path: Path, output_dir: Path) -> str:
@@ -84,7 +138,12 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
-            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            check_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+                **_build_yt_dlp_network_opts(),
+            }
             with yt_dlp.YoutubeDL(check_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, url, False)
 
@@ -152,6 +211,7 @@ class VideoProcessor:
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
+                **_build_yt_dlp_network_opts(),
             }
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 await asyncio.to_thread(ydl.download, [url])
@@ -469,7 +529,8 @@ class VideoProcessor:
             视频信息字典
         """
         try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            info_opts = {"quiet": True, **_build_yt_dlp_network_opts()}
+            with yt_dlp.YoutubeDL(info_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return {
                     'title': info.get('title', ''),
