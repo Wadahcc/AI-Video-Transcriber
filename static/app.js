@@ -38,6 +38,7 @@ class VideoTranscriber {
         download_transcript:     'Transcript',
         download_translation:    'Translation',
         download_summary:        'Summary',
+        download_subtitle:       'Subtitle',
         empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
         footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
         processing:              'Processing…',
@@ -88,6 +89,7 @@ class VideoTranscriber {
         download_transcript:     '转录',
         download_translation:    '翻译',
         download_summary:        '摘要',
+        download_subtitle:       '字幕',
         empty_hint:              '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
         footer_text:             '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
         processing:              '处理中…',
@@ -147,6 +149,7 @@ class VideoTranscriber {
     this.dlScript           = document.getElementById('downloadScript');
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
+    this.dlSubtitle         = document.getElementById('downloadSubtitle');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('.tab-btn');
     this.tabPanes           = document.querySelectorAll('.tab-pane');
@@ -204,6 +207,7 @@ class VideoTranscriber {
     this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+    this.dlSubtitle.addEventListener('click',    () => this._downloadFile('subtitle'));
 
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => {
@@ -481,7 +485,7 @@ class VideoTranscriber {
 
         if (task.status === 'completed') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
-          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file);
         } else if (task.status === 'error') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
           this._showError(task.error || 'Processing error');
@@ -498,7 +502,7 @@ class VideoTranscriber {
             const task = await r.json();
             if (task?.status === 'completed') {
               this._stopSP(); this._setLoading(false); this._hideProgress();
-              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file);
               return;
             }
           }
@@ -671,7 +675,7 @@ class VideoTranscriber {
     return c;
   }
 
-  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang) {
+  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang, subtitleFile) {
     this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
     this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
 
@@ -685,6 +689,10 @@ class VideoTranscriber {
     } else {
       this.translationTabBtn.style.display  = 'none';
       this.dlTranslation.style.display      = 'none';
+    }
+
+    if (this.dlSubtitle) {
+      this.dlSubtitle.style.display = subtitleFile ? 'inline-flex' : 'none';
     }
 
     this.resultsPanel.classList.add('show');
@@ -712,6 +720,14 @@ class VideoTranscriber {
       if      (type === 'script')      filename = task.script_path      ? task.script_path.split('/').pop()      : `transcript_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
       else if (type === 'summary')     filename = task.summary_path     ? task.summary_path.split('/').pop()     : `summary_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
       else if (type === 'translation') filename = task.translation_path ? task.translation_path.split('/').pop() : `translation_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
+      else if (type === 'subtitle') {
+        filename = task.subtitle_file
+          || (task.subtitle_path ? task.subtitle_path.split('/').pop() : null)
+          || `subtitle_${task.safe_title||'x'}_${task.short_id||'x'}.${task.subtitle_ext||'vtt'}`;
+        if (!task.subtitle_file && !task.subtitle_path) {
+          throw new Error(this.t('error_no_subtitle') || 'No subtitle file available');
+        }
+      }
       else throw new Error('Unknown type');
 
       const a = document.createElement('a');

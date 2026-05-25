@@ -36,6 +36,7 @@ class Translator:
             "ru": "Русский",
             "ar": "العربية",
             "hi": "हिन्दी",
+            "id": "Bahasa Indonesia",
         }
 
         eff_key = (api_key.strip() if isinstance(api_key, str) and api_key.strip() else None) or os.getenv(
