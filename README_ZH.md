@@ -194,6 +194,7 @@ AI-Video-Transcriber/
 | `YT_DLP_SOCKET_TIMEOUT` | yt-dlp socket 超时（秒） | `60` | 否 |
 | `YT_DLP_RETRIES` | yt-dlp 重试次数 | `10` | 否 |
 | `YT_DLP_FRAGMENT_RETRIES` | yt-dlp HLS/DASH 分片重试次数 | `10` | 否 |
+| `YT_DLP_REMOTE_COMPONENTS` | yt-dlp EJS JS 挑战求解器的远程组件源（逗号分隔）；解 YouTube `n` 参数需要，依赖本地 JS 运行时（`deno` 或 `node`） | `ejs:github` | 否 |
 
 另提供可选接口 `POST /api/process-upload`，与向 `/api/process-video` 提交 `file`  multipart 字段行为一致。
 
@@ -252,6 +253,22 @@ export YT_DLP_COOKIES_BROWSER=chrome:/home/you/.config/google-chrome
   ```
 - B 站 / TikTok 等其他平台也适用同一组环境变量，从对应已登录浏览器导出 cookies 即可。
 - 即使 cookies 正确，链路本身较慢时仍可能超时；可调高 `YT_DLP_SOCKET_TIMEOUT` 与 `YT_DLP_RETRIES`。
+
+### Q: YouTube 报 `ERROR: Requested format is not available` 怎么办？
+A: yt-dlp 无法解出 YouTube URL 里的 `n` 参数。从 2026.x 起，YouTube 在 player.js 里下发了一个基于 JS 的反机器人挑战，需要本地 JS 运行时 + 求解器脚本才能过。未配置时只能拿到 storyboard 等权重低的格式，`bestaudio/best` 会被拒。
+
+内置的 Docker 镜像已预装 **deno**，且默认 `YT_DLP_REMOTE_COMPONENTS=ejs:github`，首次使用时会从 yt-dlp 的 GitHub release 拉取求解器脚本。裸机部署补补丁：
+
+1. 装一个 JS 运行时（deno 最轻量）：
+   ```bash
+   curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path
+   export PATH=$HOME/.deno/bin:$PATH
+   # （或装 Node.js：`apt install nodejs` / `nvm install --lts`）
+   ```
+2. 别把 `YT_DLP_REMOTE_COMPONENTS` 设为空（默认 `ejs:github` 即可工作）。
+3. 重启服务。
+
+如果不想让 yt-dlp 运行时拉脚本，可以手动预装 `ejs` bundle 后将 `YT_DLP_REMOTE_COMPONENTS=` 设为空，详见 yt-dlp [EJS 文档](https://github.com/yt-dlp/yt-dlp/wiki/EJS)。
 
 ### Q: 出现 500 报错/白屏，是代码问题吗？
 A: 多数情况下是环境配置问题，请按以下清单排查：

@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_network_opts() -> dict:
-    """Build cookie / timeout / retry options for yt-dlp from environment.
+    """Build cookie / timeout / retry / JS-solver options for yt-dlp from env.
 
     Environment variables:
         YT_DLP_COOKIES_FILE: path to a Netscape-format cookies.txt
@@ -41,6 +41,14 @@ def build_network_opts() -> dict:
         YT_DLP_SOCKET_TIMEOUT: socket timeout seconds (default 60).
         YT_DLP_RETRIES: retries for transient errors (default 10).
         YT_DLP_FRAGMENT_RETRIES: retries per HLS/DASH fragment (default 10).
+        YT_DLP_REMOTE_COMPONENTS: comma-separated list of remote component
+            sources for yt-dlp's EJS JS-challenge solver (default
+            ``ejs:github``). YouTube's `n` parameter is solved by player.js,
+            and yt-dlp downloads a helper script on first use. Without this
+            (or a pre-installed JS runtime + bundled solver), yt-dlp only
+            sees storyboard formats and ``bestaudio/best`` raises
+            ``Requested format is not available``. Set to empty string to
+            disable.
     """
     opts: dict = {}
 
@@ -69,6 +77,16 @@ def build_network_opts() -> dict:
     opts["socket_timeout"] = _env_int("YT_DLP_SOCKET_TIMEOUT", 60)
     opts["retries"] = _env_int("YT_DLP_RETRIES", 10)
     opts["fragment_retries"] = _env_int("YT_DLP_FRAGMENT_RETRIES", 10)
+
+    # Enable yt-dlp's EJS JS-challenge solver. Required since yt-dlp 2026.x
+    # for any non-trivial YouTube video; otherwise bestaudio/best is rejected
+    # with "Requested format is not available". A JS runtime (deno or node)
+    # must be installed on the host; the Docker image installs deno.
+    raw_components = os.getenv("YT_DLP_REMOTE_COMPONENTS", "ejs:github").strip()
+    if raw_components:
+        opts["remote_components"] = [
+            c.strip() for c in raw_components.split(",") if c.strip()
+        ]
     return opts
 
 

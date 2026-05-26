@@ -194,6 +194,7 @@ AI-Video-Transcriber/
 | `YT_DLP_SOCKET_TIMEOUT` | yt-dlp socket timeout in seconds | `60` | No |
 | `YT_DLP_RETRIES` | yt-dlp retries for transient errors | `10` | No |
 | `YT_DLP_FRAGMENT_RETRIES` | yt-dlp retries per HLS/DASH fragment | `10` | No |
+| `YT_DLP_REMOTE_COMPONENTS` | Comma-separated remote-component sources for yt-dlp's EJS JS-challenge solver (needed for YouTube's `n` parameter; requires a JS runtime like `deno` or `node`) | `ejs:github` | No |
 
 An optional dedicated endpoint `POST /api/process-upload` exists with the same behavior as sending `file` to `/api/process-video`.
 
@@ -252,6 +253,22 @@ export YT_DLP_COOKIES_BROWSER=chrome:/home/you/.config/google-chrome
   ```
 - For other platforms (Bilibili, TikTok, etc.) the same env vars apply — export cookies from your logged-in browser on that platform.
 - If you still see download timeouts even with valid cookies, the upstream link may be slow; bump `YT_DLP_SOCKET_TIMEOUT` and `YT_DLP_RETRIES`.
+
+### Q: YouTube returns `ERROR: Requested format is not available`
+A: yt-dlp couldn't decode YouTube's `n` URL parameter (since 2026.x, YouTube enforces a JS-based anti-bot challenge on most videos). Without a JS runtime + solver script, yt-dlp only sees storyboard formats, so format selection like `bestaudio/best` fails.
+
+The bundled Docker image already installs **deno** and the solver is downloaded automatically on first use (via `YT_DLP_REMOTE_COMPONENTS=ejs:github`). For a **bare-metal** install:
+
+1. Install a JS runtime (deno is the lightest):
+   ```bash
+   curl -fsSL https://deno.land/install.sh | sh -s -- -y --no-modify-path
+   export PATH=$HOME/.deno/bin:$PATH
+   # (or install Node.js: `apt install nodejs` / `nvm install --lts`)
+   ```
+2. Make sure `YT_DLP_REMOTE_COMPONENTS` is **not** set to empty (default `ejs:github` already works).
+3. Restart the service.
+
+If you don't want yt-dlp to fetch the solver from GitHub at runtime, you can pre-install the `ejs` bundle yourself and set `YT_DLP_REMOTE_COMPONENTS=` (empty). See yt-dlp's [EJS docs](https://github.com/yt-dlp/yt-dlp/wiki/EJS) for details.
 
 ### Q: I get HTTP 500 errors when starting/using the service. Why?
 A: In most cases this is an environment configuration issue rather than a code bug. Please check:
