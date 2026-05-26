@@ -514,6 +514,33 @@
     }
     .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
 
+    .dl-format-group {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .25rem .5rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+    }
+    .dl-format-label {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .dl-format-select {
+      background: var(--surface-1);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: .25rem .5rem;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    .dl-format-select:focus { outline: 2px solid var(--accent-dim); outline-offset: 1px; }
+
     .tab-bar {
       display: flex;
       border-bottom: 1px solid var(--border);
@@ -768,6 +795,23 @@
           <i class="fas fa-closed-captioning"></i>
           <span data-i18n="download_subtitle">Subtitle</span>
         </button>
+        <div class="dl-format-group" id="formatGroup" style="display:none;">
+          <label for="formatSelect" class="dl-format-label">
+            <i class="fas fa-file-export"></i>
+            <span data-i18n="download_format">Format</span>
+          </label>
+          <select id="formatSelect" class="dl-format-select" aria-label="Subtitle format">
+            <option value="srt">.srt</option>
+            <option value="vtt">.vtt</option>
+            <option value="ass">.ass</option>
+            <option value="txt">.txt</option>
+            <option value="md">.md</option>
+          </select>
+          <button class="btn-dl" id="downloadFormat">
+            <i class="fas fa-download"></i>
+            <span data-i18n="download_button">Download</span>
+          </button>
+        </div>
       </div>
 
       <div class="tab-bar">

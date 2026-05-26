@@ -40,6 +40,8 @@ class VideoTranscriber {
         download_translation:    'Translation',
         download_summary:        'Summary',
         download_subtitle:       'Subtitle',
+        download_format:         'Format',
+        download_button:         'Download',
         empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
         footer_text:             '<strong style="color:var(--accent-text);text-shadow:0 0 12px rgba(var(--accent-rgb),.35);">auto-sub</strong> — auto-extract subtitles &amp; AI summaries, Bahasa Indonesia ready. Built on <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">AI-Video-Transcriber</a>.',
         processing:              'Processing…',
@@ -92,6 +94,8 @@ class VideoTranscriber {
         download_translation:    '翻译',
         download_summary:        '摘要',
         download_subtitle:       '字幕',
+        download_format:         '格式',
+        download_button:         '下载',
         empty_hint:              '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
         footer_text:             '<strong style="color:var(--accent-text);text-shadow:0 0 12px rgba(var(--accent-rgb),.35);">auto-sub</strong> — 自动提取字幕与 AI 摘要，支持印尼语。基于 <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" rel="noopener noreferrer" style="color:var(--text-muted);">AI-Video-Transcriber</a>。',
         processing:              '处理中…',
@@ -152,6 +156,9 @@ class VideoTranscriber {
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
     this.dlSubtitle         = document.getElementById('downloadSubtitle');
+    this.formatGroup        = document.getElementById('formatGroup');
+    this.formatSelect       = document.getElementById('formatSelect');
+    this.dlFormat           = document.getElementById('downloadFormat');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('.tab-btn');
     this.tabPanes           = document.querySelectorAll('.tab-pane');
@@ -210,6 +217,9 @@ class VideoTranscriber {
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
     this.dlSubtitle.addEventListener('click',    () => this._downloadFile('subtitle'));
+    if (this.dlFormat) {
+      this.dlFormat.addEventListener('click', () => this._downloadTranscriptFormat());
+    }
 
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => {
@@ -490,7 +500,7 @@ class VideoTranscriber {
 
         if (task.status === 'completed') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
-          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file);
+          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file, task.has_segments);
         } else if (task.status === 'error') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
           this._showError(task.error || 'Processing error');
@@ -507,7 +517,7 @@ class VideoTranscriber {
             const task = await r.json();
             if (task?.status === 'completed') {
               this._stopSP(); this._setLoading(false); this._hideProgress();
-              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file);
+              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language, task.subtitle_file, task.has_segments);
               return;
             }
           }
@@ -680,7 +690,7 @@ class VideoTranscriber {
     return c;
   }
 
-  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang, subtitleFile) {
+  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang, subtitleFile, hasSegments) {
     this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
     this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
 
@@ -698,6 +708,9 @@ class VideoTranscriber {
 
     if (this.dlSubtitle) {
       this.dlSubtitle.style.display = subtitleFile ? 'inline-flex' : 'none';
+    }
+    if (this.formatGroup) {
+      this.formatGroup.style.display = hasSegments ? 'inline-flex' : 'none';
     }
 
     this.resultsPanel.classList.add('show');
@@ -744,6 +757,18 @@ class VideoTranscriber {
     } catch (e) {
       this._showError(this.t('error_download_failed') + e.message);
     }
+  }
+
+  async _downloadTranscriptFormat() {
+    if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
+    const fmt = (this.formatSelect && this.formatSelect.value) || 'srt';
+    const url = `${this.apiBase}/transcript/${encodeURIComponent(this.currentTaskId)}.${fmt}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   /* ── UI helpers ───────────────────────────────────────── */
