@@ -3,7 +3,7 @@ import openai
 import logging
 from typing import Optional
 
-from llm_sanitize import strip_llm_artifacts
+from .llm_sanitize import strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
 
